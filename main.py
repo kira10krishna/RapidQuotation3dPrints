@@ -1,54 +1,59 @@
 import asyncio
 import pymesh
+import aio_pika
 
-# Define a class to represent the 3D object
-class Object3D:
-    def __init__(self, file, material, filament_cost_per_unit):
-        self.file = file
-        self.material = material
-        self.filament_cost_per_unit = filament_cost_per_unit
+# Define the RabbitMQ connection parameters
+RABBITMQ_HOST = "localhost"
+RABBITMQ_PORT = 5672
+RABBITMQ_USER = "guest"
+RABBITMQ_PASSWORD = "guest"
+RABBITMQ_QUEUE = "object_file_queue"
 
-    async def calculate_volume(self):
-        # Load the mesh using PyMesh
-        mesh = pymesh.load_mesh(self.file)
+# Define the function to take input from RabbitMQ
+async def take_input_from_rabbitmq():
+    # Create a connection to RabbitMQ
+    connection = await aio_pika.connect_robust(
+        f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}/",
+        loop=asyncio.get_event_loop(),
+    )
 
-        # Calculate the volume of the mesh
+    # Create a queue to receive messages
+    queue = await connection.declare_queue(RABBITMQ_QUEUE, auto_delete=True)
+
+    # Define the message handler
+    async def handle_message(message: aio_pika.IncomingMessage):
+        # Acknowledge the message
+        await message.ack()
+
+        # Get the object file name from the message body
+        object_file_name = message.body.decode()
+
+        # Load the mesh from the object file
+        mesh = pymesh.load_mesh("airboat.obj")
+
+        # Calculate the necessary dimensions and cost
+        largest_dimension = max(max(abs(vertices)) for vertices in mesh.vertices)
+        divided_factor = largest_dimension / 10
         volume = mesh.volume
+        area = sum(max(abs(vertices)) for vertices in mesh.faces)
+        material_type = "PLA"
+        filament_used = "1.75mm"
+        cost = volume * 0.01 + area * 0.005
 
-        return volume
+        # Output the results
+        print(f"Object File Name: {object_file_name}")
+        print(f"Largest Dimension: {largest_dimension}")
+        print(f"Divided Factor: {divided_factor}")
+        print(f"Volume: {volume}")
+        print(f"Area: {area}")
+        print(f"Material Type: {material_type}")
+        print(f"Filament Used: {filament_used}")
+        print(f"Cost: {cost}")
 
-    async def calculate_largest_dimension(self):
-        # Load the mesh using PyMesh
-        mesh = pymesh.load_mesh(self.file)
+    # Start consuming messages
+    await queue.consume(handle_message)
 
-        # Calculate the bounding box of the mesh
-        bbox = mesh.bbox
-
-        # Calculate the largest dimension of the bounding box
-        largest_dimension = max(bbox[1] - bbox[0])
-
-        return largest_dimension
-
-    async def calculate_cost(self):
-        volume = await self.calculate_volume()
-        largest_dimension = await self.calculate_largest_dimension()
-
-        # Calculate the cost based on the volume and largest dimension
-        cost = volume * self.filament_cost_per_unit * (largest_dimension / DIVISION_FACTOR)
-
-        return cost
-
-# Define the division factor
-DIVISION_FACTOR = 10
-
-# Define the material and filament cost per unit
-MATERIAL = "PLA"
-FILAMENT_COST_PER_UNIT = 0.02
-
-# Create an instance of the Object3D class
-obj = Object3D("object_file.stl", MATERIAL, FILAMENT_COST_PER_UNIT)
-
-# Run the calculate_cost function asynchronously
-cost = asyncio.run(obj.calculate_cost())
-
-print(f"The cost to print the object is: ${cost:.2f}")
+# Run the program
+loop = asyncio.get_event_loop()
+loop.run_until_complete(take_input_from_rabbitmq())
+loop.run_forever()
