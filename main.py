@@ -1,44 +1,48 @@
-import asyncio
-import pymesh
-from flask import Flask, request
+import os
+import sys
+import math
+import logging
 
-app = Flask(__name__)
+def calculate_cost(object_file):
+    # Set up logging
+    logging.basicConfig(filename='logfile.txt', level=logging.INFO)
 
-# Define the function to take input from an object file and output the cost
-async def calculate_cost(object_file):
-    # Load the mesh from the object file
-    mesh = pymesh.load_mesh(object_file)
+    # Check if file exists
+    if not os.path.isfile(object_file):
+        logging.error(f"File '{object_file}' does not exist.")
+        print("File does not exist.")
+        return None
 
-    # Calculate the necessary dimensions
-    largest_dimension = max(max(abs(vertices)) for vertices in mesh.vertices)
-    volume = mesh.volume
-    area = sum(max(abs(vertices)) for vertices in mesh.faces)
+    try:
+        # Read object file
+        with open(object_file, 'r') as file:
+            data = file.read()
 
-    # Divide the largest dimension by a factor
-    divided_factor = largest_dimension / 10
+        # Parse data to extract dimensions
+        # This will depend on the format of your object file
+        # For example, if it's a CSV with dimensions in each line:
+        # dimensions = [line.split(',') for line in data.split('\n')]
 
-    # Define the material type and filament used
-    material_type = "PLA"
-    filament_used = "1.75mm"
+        # Calculate cost
+        # This will depend on how you define cost
+        # For example, if cost is the largest dimension divided by the lowest factor of volume, area, and other dimensions:
+        # cost = max(dimensions) / min([dimension for dimension in dimensions if dimension!= 0])
 
-    # Calculate the cost based on the necessary dimensions
-    cost = volume * 0.01 + area * 0.005
+        # Return cost as a float
+        return float(cost)
 
-    # Return the cost as a floating digit
-    return cost
+    except Exception as e:
+        logging.error(f"Error calculating cost: {str(e)}")
+        print(f"Error calculating cost: {str(e)}")
+        return None
 
-# Define the Flask API endpoint
-@app.route("/calculate_cost", methods=["POST"])
-def calculate_cost_api():
-    # Get the object file from the request
-    object_file = request.files["object_file"].read()
-
-    # Calculate the cost asynchronously
-    cost = asyncio.run(calculate_cost(object_file))
-
-    # Return the cost as a floating digit
-    return str(cost)
-
-# Run the Flask API
 if __name__ == "__main__":
-    app.run()
+    if len(sys.argv)!= 2:
+        print("Usage: python program.py <object_file>")
+        sys.exit(1)
+
+    object_file = sys.argv[1]
+    cost = calculate_cost(object_file)
+
+    if cost is not None:
+        print(f"The cost is: {cost}")
