@@ -1,59 +1,59 @@
-import os
-import sys
-import math
-import logging
 import asyncio
+import pymesh
+import aio_pika
 
-async def read_object_file(object_file):
-    # Set up logging
-    logging.basicConfig(filename='logfile.txt', level=logging.INFO)
+# Define the RabbitMQ connection parameters
+RABBITMQ_HOST = "localhost"
+RABBITMQ_PORT = 5672
+RABBITMQ_USER = "guest"
+RABBITMQ_PASSWORD = "guest"
+RABBITMQ_QUEUE = "object_file_queue"
 
-    # Check if file exists
-    if not os.path.isfile(object_file):
-        logging.error(f"File '{object_file}' does not exist.")
-        print("File does not exist.")
-        return None
+# Define the function to take input from RabbitMQ
+async def take_input_from_rabbitmq():
+    # Create a connection to RabbitMQ
+    connection = await aio_pika.connect_robust(
+        f"amqp://{RABBITMQ_USER}:{RABBITMQ_PASSWORD}@{RABBITMQ_HOST}:{RABBITMQ_PORT}/",
+        loop=asyncio.get_event_loop(),
+    )
 
-    try:
-        # Read object file
-        with open(object_file, 'r') as file:
-            data = file.read()
+    # Create a queue to receive messages
+    queue = await connection.declare_queue(RABBITMQ_QUEUE, auto_delete=True)
 
-        return data
+    # Define the message handler
+    async def handle_message(message: aio_pika.IncomingMessage):
+        # Acknowledge the message
+        await message.ack()
 
-    except Exception as e:
-        logging.error(f"Error reading object file: {str(e)}")
-        print(f"Error reading object file: {str(e)}")
-        return None
+        # Get the object file name from the message body
+        object_file_name = message.body.decode()
 
-async def calculate_cost(data):
-    cost = 0
-    # Parse data to extract dimensions
-    # This will depend on the format of your object file
-    # For example, if it's a CSV with dimensions in each line:
-    # dimensions = [line.split(',') for line in data.split('\n')]
+        # Load the mesh from the object file
+        mesh = pymesh.load_mesh("airboat.obj")
 
-    # Calculate cost
-    # This will depend on how you define cost
-    # For example, if cost is the largest dimension divided by the lowest factor of volume, area, and other dimensions:
-    # cost = max(dimensions) / min([dimension for dimension in dimensions if dimension!= 0])
+        # Calculate the necessary dimensions and cost
+        largest_dimension = max(max(abs(vertices)) for vertices in mesh.vertices)
+        divided_factor = largest_dimension / 10
+        volume = mesh.volume
+        area = sum(max(abs(vertices)) for vertices in mesh.faces)
+        material_type = "PLA"
+        filament_used = "1.75mm"
+        cost = volume * 0.01 + area * 0.005
 
-    # Return cost as a float
-    return float(cost)
+        # Output the results
+        print(f"Object File Name: {object_file_name}")
+        print(f"Largest Dimension: {largest_dimension}")
+        print(f"Divided Factor: {divided_factor}")
+        print(f"Volume: {volume}")
+        print(f"Area: {area}")
+        print(f"Material Type: {material_type}")
+        print(f"Filament Used: {filament_used}")
+        print(f"Cost: {cost}")
 
-async def main():
-    if len(sys.argv)!= 2:
-        print("Usage: python program.py <object_file>")
-        sys.exit(1)
+    # Start consuming messages
+    await queue.consume(handle_message)
 
-    object_file = sys.argv[1]
-
-    # Run the read_object_file and calculate_cost functions asynchronously
-    data = await read_object_file(object_file)
-    if data is not None:
-        cost = await calculate_cost(data)
-        if cost is not None:
-            print(f"The cost is: {cost}")
-
-# Run the main function
-asyncio.run(main())
+# Run the program
+loop = asyncio.get_event_loop()
+loop.run_until_complete(take_input_from_rabbitmq())
+loop.run_forever()
